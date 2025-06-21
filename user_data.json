@@ -1,0 +1,18 @@
+{
+  "user_123": {
+    "name": "Alex",
+    "last_session": "2024-05-20",
+    "sessions_attended": 5,
+    "streak": 3,
+    "goal": "Reduce stress",
+    "language": "en"
+  },
+  "user_456": {
+    "name": "Rahul",
+    "last_session": "2024-06-10",
+    "sessions_attended": 2,
+    "streak": 1,
+    "goal": "Improve focus",
+    "language": "hi"
+  }
+}
