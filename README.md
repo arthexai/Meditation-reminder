@@ -108,48 +108,47 @@ The script will:
 ### 1. Export all the dependencies
 
 ```bash
-export XI_API_KEY="pk_..."          # ElevenLabs API key
-export AGENT_ID="agent_..."         # The agent you want to use (en or hi)
-export PHONE_ID="PN..."             # Your Twilio/SIP number ID
-export RECIPIENTS_JSON='[
-  {
-    "phone_number": "+911234567890",
-    "conversation_initiation_client_data": {
-      "type": "conversation_initiation_client_data",
-      "dynamic_variables": {
-        "name": "Rahul",
-        "last_session_date": "2025-06-20",
-        "sessions_completed": 2
-      }
-    }
-  },
-  {
-    "phone_number": "+919876543210",
-    "conversation_initiation_client_data": {
-      "type": "conversation_initiation_client_data",
-      "dynamic_variables": {
-        "name": "Seema",
-        "last_session_date": "2025-06-10",
-        "sessions_completed": 1
-      }
-    }
-  }
-]'
+API_KEY=""
+PHONE_ID=""
+AGENT_EN_ID=""
+
+PHONE_NUMBER=""
+
+CURRENT_TIME=$(date +%s)
 ```
 
 ### 2. Send the request to ElevenLabs
 
 ```bash
 curl -X POST "https://api.elevenlabs.io/v1/convai/batch-calling/submit" \
-  -H "xi-api-key: ${XI_API_KEY}" \
+  -H "xi-api-key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-        "call_name": "meditation-en-'"$(date -u +"%Y-%m-%dT%H:%M:%SZ")"'",
-        "agent_id": "'"${AGENT_ID}"'",
-        "agent_phone_number_id": "'"${PHONE_ID}"'",
-        "scheduled_time_unix": '"$(date +%s)"',
-        "recipients": '"${RECIPIENTS_JSON}"'
-      }'
+  -d "{
+    \"call_name\": \"meditation-en-batch\",
+    \"agent_id\": \"$AGENT_EN_ID\",
+    \"agent_phone_number_id\": \"$PHONE_ID\",
+    \"scheduled_time_unix\": $CURRENT_TIME,
+    \"recipients\": [
+      {
+        \"phone_number\": \"$PHONE_NUMBER\",
+        \"conversation_initiation_client_data\": {
+          \"type\": \"conversation_initiation_client_data\",
+          \"dynamic_variables\": {
+            \"name\": \"John\",
+            \"last_session_date\": \"yesterday\",
+            \"sessions_completed\": 5
+          },
+          \"conversation_config_override\": {
+            \"agent\": {
+              \"prompt\": {
+                \"prompt\": \"You are Shakti, a meditation reminder assistant. Speak calmly and peacefully. Ask if they want to share anything, then close with: 'Alright, I'll leave you now with your stillness. Breathe gently and enjoy your practice. Namaste.'\"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }"
 ```
 
 
