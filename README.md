@@ -113,13 +113,13 @@ PHONE_ID=""
 AGENT_EN_ID=""
 
 PHONE_NUMBER=""
-
-CURRENT_TIME=$(date +%s)
 ```
 
 ### 2. Send the request to ElevenLabs
 
 ```bash
+CURRENT_TIME=$(date +%s)
+
 curl -X POST "https://api.elevenlabs.io/v1/convai/batch-calling/submit" \
   -H "xi-api-key: $API_KEY" \
   -H "Content-Type: application/json" \
@@ -134,14 +134,14 @@ curl -X POST "https://api.elevenlabs.io/v1/convai/batch-calling/submit" \
         \"conversation_initiation_client_data\": {
           \"type\": \"conversation_initiation_client_data\",
           \"dynamic_variables\": {
-            \"name\": \"John\",
+            \"name\": \"om\",
             \"last_session_date\": \"yesterday\",
             \"sessions_completed\": 5
           },
           \"conversation_config_override\": {
             \"agent\": {
               \"prompt\": {
-                \"prompt\": \"You are Shakti, a meditation reminder assistant. Speak calmly and peacefully. Ask if they want to share anything, then close with: 'Alright, I'll leave you now with your stillness. Breathe gently and enjoy your practice. Namaste.'\"
+                \"prompt\": \"You are Shakti, a calm meditation assistant. You are here to remind them about there meditation session. After reminding, ask: would you like to ask or share anything? Take 3 sec pause, If the person do not reply, end the conversation peacefully.\"
               }
             }
           }
