@@ -7,11 +7,11 @@ from dotenv import load_dotenv
 from collections import defaultdict
 
 # Load environment variables
-load_dotenv()
-API_KEY     = os.getenv("API_KEY")
-PHONE_ID    = os.getenv("PHONE_ID")
-AGENT_EN_ID = os.getenv("AGENT_EN_ID")
-AGENT_HI_ID = os.getenv("AGENT_HI_ID")
+API_KEY     = st.secrets["API_KEY"]
+PHONE_ID    = st.secrets["PHONE_ID"]
+AGENT_EN_ID = st.secrets["AGENT_EN_ID"]
+AGENT_HI_ID = st.secrets["AGENT_HI_ID"]
+
 
 AGENT_FOR_LANG = { "en": AGENT_EN_ID, "hi": AGENT_HI_ID }
 ENDPOINT = "https://api.elevenlabs.io/v1/convai/batch-calling/submit"
