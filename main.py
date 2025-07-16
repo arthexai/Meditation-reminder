@@ -1,16 +1,21 @@
-import os, csv, json, time, requests
+
+import os, json, time, requests
 from datetime import datetime
-from collections import defaultdict
+import streamlit as st
+import pandas as pd
 from dotenv import load_dotenv
+from collections import defaultdict
 
+# Load environment variables
 load_dotenv()
+API_KEY     = os.getenv("API_KEY")
+PHONE_ID    = os.getenv("PHONE_ID")
+AGENT_EN_ID = os.getenv("AGENT_EN_ID")
+AGENT_HI_ID = os.getenv("AGENT_HI_ID")
 
-API_KEY      = os.getenv("API_KEY")
-PHONE_ID     = os.getenv("PHONE_ID")
-AGENT_EN_ID  = os.getenv("AGENT_EN_ID")
-AGENT_HI_ID  = os.getenv("AGENT_HI_ID")
-CSV_FILE     = "recipients.csv"
-
+AGENT_FOR_LANG = { "en": AGENT_EN_ID, "hi": AGENT_HI_ID }
+ENDPOINT = "https://api.elevenlabs.io/v1/convai/batch-calling/submit"
+HEADERS  = { "xi-api-key": API_KEY, "Content-Type": "application/json" }
 
 SYSTEM_PROMPT = {
     "en": """You are Shakti, a calm and compassionate meditation reminder assistant. Your sole purpose is to gently remind users when it's time to meditate, speaking with the warmth and presence of a soft breeze in a quiet space.
@@ -70,23 +75,19 @@ DEFAULTS = {
     "language": "en"
 }
 
+# ---------------- Helper Functions ---------------- #
+
 def safe(row, key):
-    raw = row.get(key, "")
-    val = raw.strip()
-
+    val = str(row.get(key, "")).strip()
     if key == "sessions_completed":
-        try:
-            return int(val)
-        except ValueError:
-            return DEFAULTS["sessions_completed"]   # fallback = 0
-    else:
-        return val or DEFAULTS[key]
-
+        try: return int(val)
+        except: return DEFAULTS["sessions_completed"]
+    return val or DEFAULTS[key]
 
 def make_recipient(row):
     lang = safe(row, "language").lower()
     return lang, {
-        "phone_number": row["phone_number"],
+        "phone_number": str(row["phone_number"]),
         "conversation_initiation_client_data": {
             "type": "conversation_initiation_client_data",
             "dynamic_variables": {
@@ -94,7 +95,6 @@ def make_recipient(row):
                 "last_session_date":  safe(row, "last_session_date"),
                 "sessions_completed": safe(row, "sessions_completed")
             },
-            # NEW: system‑prompt override
             "conversation_config_override": {
                 "agent": {
                     "prompt": { "prompt": SYSTEM_PROMPT.get(lang, SYSTEM_PROMPT["en"]) }
@@ -103,31 +103,52 @@ def make_recipient(row):
         }
     }
 
-groups = defaultdict(list)
-with open(CSV_FILE, newline="", encoding="utf-8") as f:
-    for row in csv.DictReader(f):
-        lang, rec = make_recipient(row)
-        groups[lang].append(rec)
+# ---------------- Streamlit UI ---------------- #
 
-AGENT_FOR_LANG = { "en": AGENT_EN_ID, "hi": AGENT_HI_ID }
+st.set_page_config(page_title="Shakti Meditation Caller", layout="centered")
+st.title("Shakti: Meditation Reminder")
 
-ENDPOINT = "https://api.elevenlabs.io/v1/convai/batch-calling/submit"
-HEADERS  = { "xi-api-key": API_KEY, "Content-Type": "application/json" }
+st.markdown("""
+Upload a CSV file with these columns:  
+`phone_number`, `name`, `sessions_completed`, `last_session_date`, `language`
+""")
 
-for lang, recipients in groups.items():
-    agent_id = AGENT_FOR_LANG.get(lang)
-    if not agent_id:
-        print("Unsupported language:", lang)
-        continue
+uploaded_file = st.file_uploader("📄 Upload CSV", type=["csv"])
 
-    payload = {
-        "call_name": f"meditation-{lang}-{datetime.utcnow().isoformat(timespec='seconds')}",
-        "agent_id": agent_id,
-        "agent_phone_number_id": PHONE_ID,
-        "scheduled_time_unix": int(time.time()),
-        "recipients": recipients
-    }
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    st.subheader("Preview Uploaded Data")
+    st.dataframe(df)
 
-    r = requests.post(ENDPOINT, headers=HEADERS, data=json.dumps(payload), timeout=30)
-    r.raise_for_status()
-    print(f"{lang.upper()} batch submitted → ID: {r.json()['id']}")
+    if st.button(" Submit Batch Call"):
+        groups = defaultdict(list)
+        for _, row in df.iterrows():
+            lang, rec = make_recipient(row)
+            groups[lang].append(rec)
+
+        results = []
+        for lang, recipients in groups.items():
+            agent_id = AGENT_FOR_LANG.get(lang)
+            if not agent_id:
+                st.warning(f" No agent configured for: {lang}")
+                continue
+
+            payload = {
+                "call_name": f"meditation-{lang}-{datetime.utcnow().isoformat(timespec='seconds')}",
+                "agent_id": agent_id,
+                "agent_phone_number_id": PHONE_ID,
+                "scheduled_time_unix": int(time.time()) - 10,  
+                "recipients": recipients
+            }
+
+            try:
+                r = requests.post(ENDPOINT, headers=HEADERS, data=json.dumps(payload), timeout=30)
+                r.raise_for_status()
+                batch_id = r.json().get("id", "N/A")
+                st.success(f"`{lang.upper()}` submitted → Batch ID: `{batch_id}`")
+            except requests.exceptions.HTTPError as e:
+                st.error(f"Error for `{lang.upper()}`: {e}")
+                st.code(json.dumps(payload, indent=2), language="json")
+            except Exception as ex:
+                st.error(f"Unexpected Error: {str(ex)}")
+
