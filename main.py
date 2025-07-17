@@ -84,20 +84,28 @@ def safe(row, key):
         except: return DEFAULTS["sessions_completed"]
     return val or DEFAULTS[key]
 
-def make_recipient(row):
+def make_recipient(row, en_prompt=None, hi_prompt=None):
     lang = safe(row, "language").lower()
+
+    if lang == "en" and en_prompt:
+        prompt = en_prompt
+    elif lang == "hi" and hi_prompt:
+        prompt = hi_prompt
+    else:
+        prompt = SYSTEM_PROMPT.get(lang, SYSTEM_PROMPT["en"])
+
     return lang, {
         "phone_number": str(row["phone_number"]),
         "conversation_initiation_client_data": {
             "type": "conversation_initiation_client_data",
             "dynamic_variables": {
-                "name":               safe(row, "name"),
-                "last_session_date":  safe(row, "last_session_date"),
+                "name": safe(row, "name"),
+                "last_session_date": safe(row, "last_session_date"),
                 "sessions_completed": safe(row, "sessions_completed")
             },
             "conversation_config_override": {
                 "agent": {
-                    "prompt": { "prompt": SYSTEM_PROMPT.get(lang, SYSTEM_PROMPT["en"]) }
+                    "prompt": { "prompt": prompt }
                 }
             }
         }
@@ -109,35 +117,52 @@ st.set_page_config(page_title="Shakti Meditation Caller", layout="centered")
 st.title("Shakti: Meditation Reminder")
 
 st.markdown("""
-Upload a CSV file with these columns:  
-`phone_number`, `name`, `sessions_completed`, `last_session_date`, `language`
+Upload a CSV file with the following columns:  
+- `phone_number`, `name`, `sessions_completed`, `last_session_date`, `language`
 """)
 
-uploaded_file = st.file_uploader("📄 Upload CSV", type=["csv"])
+# Custom prompt inputs
+st.markdown("### Customize System Prompts")
+custom_en_prompt = st.text_area("🗣️ English Prompt (Optional)", value="", height=200, placeholder="Leave blank to use default English prompt...")
+custom_hi_prompt = st.text_area("🗣️ Hindi Prompt (Optional)", value="", height=200, placeholder="Leave blank to use default Hindi prompt...")
+
+sample_csv = """phone_number,name,last_session_date,sessions_completed,language
+"""
+# File Upload
+uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+
+st.download_button(
+    label="Download Sample CSV",
+    data=sample_csv,
+    file_name="sample.csv",
+    mime="text/csv"
+)
+
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
     st.subheader("Preview Uploaded Data")
     st.dataframe(df)
 
-    if st.button(" Submit Batch Call"):
+    if st.button("Submit Batch Call Request"):
         groups = defaultdict(list)
+
         for _, row in df.iterrows():
-            lang, rec = make_recipient(row)
-            groups[lang].append(rec)
+            lang, recipient = make_recipient(row, en_prompt=custom_en_prompt, hi_prompt=custom_hi_prompt)
+            groups[lang].append(recipient)
 
         results = []
         for lang, recipients in groups.items():
             agent_id = AGENT_FOR_LANG.get(lang)
             if not agent_id:
-                st.warning(f" No agent configured for: {lang}")
+                st.warning(f"No agent configured for language: {lang}")
                 continue
 
             payload = {
                 "call_name": f"meditation-{lang}-{datetime.utcnow().isoformat(timespec='seconds')}",
                 "agent_id": agent_id,
                 "agent_phone_number_id": PHONE_ID,
-                "scheduled_time_unix": int(time.time()) - 10,  
+                "scheduled_time_unix": int(time.time()),
                 "recipients": recipients
             }
 
@@ -145,10 +170,14 @@ if uploaded_file:
                 r = requests.post(ENDPOINT, headers=HEADERS, data=json.dumps(payload), timeout=30)
                 r.raise_for_status()
                 batch_id = r.json().get("id", "N/A")
-                st.success(f"`{lang.upper()}` submitted → Batch ID: `{batch_id}`")
+                results.append((lang, batch_id))
             except requests.exceptions.HTTPError as e:
-                st.error(f"Error for `{lang.upper()}`: {e}")
+                st.error(f"HTTP Error for {lang.upper()}: {e}")
                 st.code(json.dumps(payload, indent=2), language="json")
             except Exception as ex:
-                st.error(f"Unexpected Error: {str(ex)}")
+                st.error(f" Unexpected Error: {str(ex)}")
 
+        if results:
+            st.success("Batch Submitted Successfully!")
+            for lang, batch_id in results:
+                st.write(f"`{lang.upper()}` → Batch ID: `{batch_id}`")
