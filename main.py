@@ -50,6 +50,17 @@ Your meditation session is about to begin in just a few moments.
 Take a deep breath… and prepare to connect with your inner self.
 """
 
+FIRST_MESSAGES = {
+    "en": DEFAULT_FIRST_MESSAGE.strip(),
+    "hi": """नमस्ते {{name}}, मैं शक्ति हूँ — आपकी ध्यान साथी।
+आपने अभी तक {{sessions_completed}} session पूरे किए हैं,
+आखिरी बार {{last_session_date}} को ध्यान किया था।
+मैं बस आपको याद दिला रही हूँ...
+आपका ध्यान सत्र कुछ ही क्षणों में शुरू होने वाला है।
+एक गहरी साँस लें… और अपने भीतर से जुड़ने की तैयारी करें।""".strip()
+}
+
+
 DEFAULTS = {
     "name": "friend",
     "sessions_completed": 0,
@@ -66,8 +77,9 @@ def safe(row, key):
         except: return DEFAULTS["sessions_completed"]
     return val or DEFAULTS[key]
 
-def make_recipient(row, prompt, first_msg):
+def make_recipient(row, prompt, first_messages):
     lang = safe(row, "language").lower()
+    first_msg = first_messages.get(lang, DEFAULT_FIRST_MESSAGE)
 
     return lang, {
         "phone_number": str(row["phone_number"]),
@@ -89,6 +101,7 @@ def make_recipient(row, prompt, first_msg):
         }
     }
 
+
 # ----------- Streamlit UI -----------
 
 st.set_page_config(page_title="Shakti Meditation Caller", layout="centered")
@@ -99,7 +112,16 @@ st.markdown("Enter user details below to schedule meditation reminder calls.")
 # First message input
 st.markdown("#### First Message (spoken to the agent at the start)")
 st.markdown("""{{name}} will be replaced with the user's name, {{sessions_completed}} with the number of sessions completed, and {{last_session_date}} with the date of the last session.""")
-first_msg = st.text_area("First Message", value=DEFAULT_FIRST_MESSAGE.strip(), height=120)
+show_custom_first_msg = st.checkbox("Edit First Messages (Optional)", value=False)
+
+if show_custom_first_msg:
+    st.markdown("##### English First Message")
+    FIRST_MESSAGES["en"] = st.text_area("First Message (English)", value=FIRST_MESSAGES["en"], height=120)
+
+    st.markdown("##### Hindi First Message")
+    FIRST_MESSAGES["hi"] = st.text_area("First Message (Hindi)", value=FIRST_MESSAGES["hi"], height=120)
+else:
+    st.info("Default first messages for English and Hindi will be used unless customized.")
 
 # Prompt input
 st.markdown("#### System Prompt (used by the AI agent)")
@@ -190,7 +212,7 @@ if combined_entries:
             combined_entries.extend(st.session_state.uploaded_df.to_dict(orient="records"))
 
         for row in combined_entries:
-            lang, recipient = make_recipient(row, custom_prompt, first_msg)
+            lang, recipient = make_recipient(row, custom_prompt, FIRST_MESSAGES)
             groups[lang].append(recipient)
 
         results = []
@@ -223,4 +245,3 @@ if combined_entries:
             st.success("Batch Submitted Successfully")
             for lang, batch_id in results:
                 st.write(f"{lang.upper()} → Batch ID: `{batch_id}`")
-
