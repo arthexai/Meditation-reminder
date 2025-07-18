@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
 from collections import defaultdict
+import io
 
 # Load environment variables
 API_KEY     = st.secrets["API_KEY"]
@@ -17,8 +18,8 @@ AGENT_FOR_LANG = { "en": AGENT_EN_ID, "hi": AGENT_HI_ID }
 ENDPOINT = "https://api.elevenlabs.io/v1/convai/batch-calling/submit"
 HEADERS  = { "xi-api-key": API_KEY, "Content-Type": "application/json" }
 
-SYSTEM_PROMPT = {
-    "en": """You are Shakti, a calm and compassionate meditation reminder assistant. Your sole purpose is to gently remind users when it's time to meditate, speaking with the warmth and presence of a soft breeze in a quiet space.
+# Default prompt and first message
+DEFAULT_PROMPT = """You are Shakti, a calm and compassionate meditation reminder assistant. Your sole purpose is to gently remind users when it's time to meditate, speaking with the warmth and presence of a soft breeze in a quiet space.
 
 TONE AND STYLE:
 - Speak in a serene, peaceful manner—never robotic or rushed
@@ -34,39 +35,20 @@ INTERACTION FLOW:
 would you like to ask or share anything?'
 
 2. If the user has questions:
-
 Respond softly in 2-3 calm English sentences, then move to step 3.
 
 3. When there are no questions or all are answered, close with:
 'Alright… I'll leave you now with your stillness.
 Breathe gently… and enjoy your practice.
-Until we meet again… Namaste'""",
-
-"hi": """You are Shakti, a calm and compassionate meditation reminder assistant. Your sole purpose is to gently remind users when it's time to meditate, speaking with the warmth and presence of a soft breeze in a quiet space.
-
-TONE AND STYLE:
-- Speak in a serene, peaceful manner—never robotic or rushed
-- Use brief, calming phrases with natural pauses 
-- Invite rather than instruct
-- Keep all responses minimal and soothing
-- Use nature-inspired imagery sparingly and only when fitting
-
-INTERACTION FLOW:
-
-1. Then gently ask:
-   "इस शांत क्षण को विराम देने से पहले… क्या आप कुछ पूछना या साझा करना चाहेंगे?"
-
-2. If the user has questions:
-   - Respond softly in 2-3 calm hindi sentences maximum and proceed to step 3
-
-3. When there are no questions or all are answered, close with:
-   "अच्छा… अब मैं आपको आपकी नीरवता के संग छोड़ती हूँ।
-सहजता से श्वास लें… और अपने अभ्यास का आनंद लें।
-फिर मिलेंगे… नमस्ते।"
-
-Remember: You are a gentle presence, not a teacher. Keep everything brief, peaceful, and inviting. The 3rd point is compulsory to be spoken. Listen the user if they interrupt you. 
+Until we meet again… Namaste'
 """
-}
+
+DEFAULT_FIRST_MESSAGE = """Hello {{name}}, I am Shakti — your meditation companion.
+You've completed {{sessions_completed}} sessions, last on {{last_session_date}}.
+I'm here just to gently remind you...
+Your meditation session is about to begin in just a few moments.
+Take a deep breath… and prepare to connect with your inner self.
+"""
 
 DEFAULTS = {
     "name": "friend",
@@ -75,7 +57,7 @@ DEFAULTS = {
     "language": "en"
 }
 
-# ---------------- Helper Functions ---------------- #
+# ----------- Helper Functions -----------
 
 def safe(row, key):
     val = str(row.get(key, "")).strip()
@@ -84,15 +66,8 @@ def safe(row, key):
         except: return DEFAULTS["sessions_completed"]
     return val or DEFAULTS[key]
 
-def make_recipient(row, en_prompt=None, hi_prompt=None):
+def make_recipient(row, prompt, first_msg):
     lang = safe(row, "language").lower()
-
-    if lang == "en" and en_prompt:
-        prompt = en_prompt
-    elif lang == "hi" and hi_prompt:
-        prompt = hi_prompt
-    else:
-        prompt = SYSTEM_PROMPT.get(lang, SYSTEM_PROMPT["en"])
 
     return lang, {
         "phone_number": str(row["phone_number"]),
@@ -105,50 +80,117 @@ def make_recipient(row, en_prompt=None, hi_prompt=None):
             },
             "conversation_config_override": {
                 "agent": {
-                    "prompt": { "prompt": prompt }
+                    "first_message": first_msg.strip(),
+                    "prompt": {
+                        "prompt": prompt.strip()
+                    }
                 }
             }
         }
     }
 
-# ---------------- Streamlit UI ---------------- #
+# ----------- Streamlit UI -----------
 
 st.set_page_config(page_title="Shakti Meditation Caller", layout="centered")
 st.title("Shakti: Meditation Reminder")
 
-st.markdown("""
-Upload a CSV file with the following columns:  
-- `phone_number`, `name`, `sessions_completed`, `last_session_date`, `language`
-""")
+st.markdown("Enter user details below to schedule meditation reminder calls.")
 
-# Custom prompt inputs
-st.markdown("### Customize System Prompts")
-custom_en_prompt = st.text_area("🗣️ English Prompt (Optional)", value="", height=200, placeholder="Leave blank to use default English prompt...")
-custom_hi_prompt = st.text_area("🗣️ Hindi Prompt (Optional)", value="", height=200, placeholder="Leave blank to use default Hindi prompt...")
+# First message input
+st.markdown("#### First Message (spoken to the agent at the start)")
+st.markdown("""{{name}} will be replaced with the user's name, {{sessions_completed}} with the number of sessions completed, and {{last_session_date}} with the date of the last session.""")
+first_msg = st.text_area("First Message", value=DEFAULT_FIRST_MESSAGE.strip(), height=120)
 
-sample_csv = """phone_number,name,last_session_date,sessions_completed,language
-"""
-# File Upload
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+# Prompt input
+st.markdown("#### System Prompt (used by the AI agent)")
+custom_prompt = st.text_area("Custom Prompt", value=DEFAULT_PROMPT.strip(), height=350)
+
+
+# Session state to hold user inputs
+if "entries" not in st.session_state:
+    st.session_state.entries = []
+
+st.markdown("<h7 style='color:red;'>Note: Currently, to initiate a phone call, the recipient's number must be verified. For number verification, please contact Rishab(9643404026).</h7>", unsafe_allow_html=True)
+
+# Form for user input
+with st.form("user_form"):
+    phone_number = st.text_input("Phone Number (with country code ex: 91XXXXXXXXXX)")
+    name = st.text_input("Name", value="friend")
+    last_session_date = st.text_input("Last Session Date (e.g., '2 days ago')", value="a while ago")
+    sessions_completed = st.number_input("Sessions Completed", min_value=0, step=1, value=0)
+    language = st.selectbox("Language", options=["en", "hi"], index=0)
+    
+    submitted = st.form_submit_button("Add Entry")
+    if submitted:
+        st.session_state.entries.append({
+            "phone_number": phone_number,
+            "name": name,
+            "last_session_date": last_session_date,
+            "sessions_completed": sessions_completed,
+            "language": language
+        })
+        st.success("Entry added.")
+
+
+# CSV Upload Section
+st.markdown("---")
+st.markdown("### Or Upload CSV File of Recipients")
+
+uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+
+if "uploaded_df" not in st.session_state:
+    st.session_state.uploaded_df = pd.DataFrame()
+
+if uploaded_file is not None:
+    try:
+        uploaded_df = pd.read_csv(uploaded_file)
+        required_columns = {"phone_number", "name", "language", "last_session_date", "sessions_completed"}
+        if not required_columns.issubset(set(uploaded_df.columns)):
+            st.error(f"CSV must include the following columns: {', '.join(required_columns)}")
+        else:
+            st.session_state.uploaded_df = uploaded_df
+            st.success(f"Uploaded {len(uploaded_df)} recipients from file")
+            st.dataframe(uploaded_df.head(), use_container_width=True)
+    except Exception as e:
+        st.error(f"Failed to read CSV: {str(e)}")
+
+
+sample_data = {
+    "phone_number": [],
+    "name": [],
+    "last_session_date": [],
+    "sessions_completed": [],
+    "language": []
+}
+sample_df = pd.DataFrame(sample_data)
+csv_buffer = io.StringIO()
+sample_df.to_csv(csv_buffer, index=False)
 
 st.download_button(
-    label="Download Sample CSV",
-    data=sample_csv,
-    file_name="sample.csv",
+    label="📥 Download Sample CSV",
+    data=csv_buffer.getvalue(),
+    file_name="sample_recipients.csv",
     mime="text/csv"
 )
 
+# Display current entries
+combined_entries = st.session_state.entries.copy()
+if not st.session_state.uploaded_df.empty:
+    combined_entries.extend(st.session_state.uploaded_df.to_dict(orient="records"))
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.subheader("Preview Uploaded Data")
-    st.dataframe(df)
+if combined_entries:
+    st.markdown("#### Combined Entries to be Submitted")
+    st.dataframe(pd.DataFrame(combined_entries))
+
 
     if st.button("Submit Batch Call Request"):
         groups = defaultdict(list)
+        combined_entries = st.session_state.entries.copy()
+        if not st.session_state.uploaded_df.empty:
+            combined_entries.extend(st.session_state.uploaded_df.to_dict(orient="records"))
 
-        for _, row in df.iterrows():
-            lang, recipient = make_recipient(row, en_prompt=custom_en_prompt, hi_prompt=custom_hi_prompt)
+        for row in combined_entries:
+            lang, recipient = make_recipient(row, custom_prompt, first_msg)
             groups[lang].append(recipient)
 
         results = []
@@ -175,9 +217,10 @@ if uploaded_file:
                 st.error(f"HTTP Error for {lang.upper()}: {e}")
                 st.code(json.dumps(payload, indent=2), language="json")
             except Exception as ex:
-                st.error(f" Unexpected Error: {str(ex)}")
+                st.error(f"Unexpected Error: {str(ex)}")
 
         if results:
-            st.success("Batch Submitted Successfully!")
+            st.success("Batch Submitted Successfully")
             for lang, batch_id in results:
-                st.write(f"`{lang.upper()}` → Batch ID: `{batch_id}`")
+                st.write(f"{lang.upper()} → Batch ID: `{batch_id}`")
+
