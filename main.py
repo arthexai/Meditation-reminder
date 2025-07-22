@@ -68,6 +68,15 @@ DEFAULTS = {
     "language": "en"
 }
 
+
+VOICE_OPTIONS = {
+    "Tina (English)": {"voice_id": "KrfvGW2D1x6nS5QnRj2q", "language": "en"},
+    "Avani (English)": {"voice_id": "WTnybLRChAQj0OBHYZg4", "language": "en"},
+    "Nikata (Hindi)": {"voice_id": "SZfY4K69FwXus87eayHK", "language": "hi"},
+    "Kanika (Hindi)": {"voice_id": "XcWoPxj7pwnIgM3dQnWv", "language": "hi"},
+}
+
+
 # ----------- Helper Functions -----------
 
 def safe(row, key):
@@ -79,8 +88,8 @@ def safe(row, key):
 
 def make_recipient(row, prompt, first_messages):
     lang = safe(row, "language").lower()
-    first_msg = first_messages.get(lang, DEFAULT_FIRST_MESSAGE)
-
+    first_msg = first_messages.get(lang, FIRST_MESSAGES["en"])
+    
     return lang, {
         "phone_number": str(row["phone_number"]),
         "conversation_initiation_client_data": {
@@ -93,13 +102,17 @@ def make_recipient(row, prompt, first_messages):
             "conversation_config_override": {
                 "agent": {
                     "first_message": first_msg.strip(),
-                    "prompt": {
-                        "prompt": prompt.strip()
-                    }
+                    "prompt": {"prompt": prompt.strip()},
+                    "language": lang
+                },
+                "tts": {
+                    "voice_id": row.get("voice_id")
                 }
             }
         }
     }
+
+
 
 
 # ----------- Streamlit UI -----------
@@ -140,8 +153,13 @@ with st.form("user_form"):
     name = st.text_input("Name", value="friend")
     last_session_date = st.text_input("Last Session Date (e.g., '2 days ago')", value="a while ago")
     sessions_completed = st.number_input("Sessions Completed", min_value=0, step=1, value=0)
-    language = st.selectbox("Language", options=["en", "hi"], index=0)
-    
+
+    # Show all voice options regardless of language
+    selected_voice_label = st.selectbox("Agent Voice", options=list(VOICE_OPTIONS.keys()))
+    selected_voice_info = VOICE_OPTIONS[selected_voice_label]
+    voice_id = selected_voice_info["voice_id"]
+    language = selected_voice_info["language"]
+
     submitted = st.form_submit_button("Add Entry")
     if submitted:
         st.session_state.entries.append({
@@ -149,9 +167,12 @@ with st.form("user_form"):
             "name": name,
             "last_session_date": last_session_date,
             "sessions_completed": sessions_completed,
-            "language": language
+            "language": language,
+            "voice_id": voice_id
         })
-        st.success("Entry added.")
+        st.success(f"Entry added with {selected_voice_label} voice!")
+
+
 
 
 # CSV Upload Section
@@ -182,7 +203,8 @@ sample_data = {
     "name": [],
     "last_session_date": [],
     "sessions_completed": [],
-    "language": []
+    "language": [],
+    "voice_id": []
 }
 sample_df = pd.DataFrame(sample_data)
 csv_buffer = io.StringIO()
@@ -204,7 +226,7 @@ if combined_entries:
     st.markdown("#### Combined Entries to be Submitted")
     st.dataframe(pd.DataFrame(combined_entries))
 
-
+    
     if st.button("Submit Batch Call Request"):
         groups = defaultdict(list)
         combined_entries = st.session_state.entries.copy()
@@ -226,7 +248,7 @@ if combined_entries:
                 "call_name": f"meditation-{lang}-{datetime.utcnow().isoformat(timespec='seconds')}",
                 "agent_id": agent_id,
                 "agent_phone_number_id": PHONE_ID,
-                "scheduled_time_unix": int(time.time()),
+                "scheduled_time_unix": int(time.time())-15,
                 "recipients": recipients
             }
 
