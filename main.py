@@ -79,6 +79,33 @@ VOICE_OPTIONS = {
 
 # ----------- Helper Functions -----------
 
+# Voice sample preview text
+SAMPLE_TEXTS = {
+    "en": "Hello, I am your meditation companion. Let's take a deep breath together.",
+    "hi": "नमस्ते, मैं आपकी ध्यान साथी शक्ति हूँ। चलिए, एक गहरी साँस लें और शुरुआत करें।"
+}
+
+def get_voice_sample(voice_id: str, text: str):
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+    headers = {
+        "xi-api-key": API_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.7
+        }
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code == 200:
+        return response.content
+    else:
+        return None
+
+
 def safe(row, key):
     val = str(row.get(key, "")).strip()
     if key == "sessions_completed":
@@ -112,9 +139,6 @@ def make_recipient(row, prompt, first_messages):
         }
     }
 
-
-
-
 # ----------- Streamlit UI -----------
 
 st.set_page_config(page_title="Shakti Meditation Caller", layout="centered")
@@ -147,6 +171,25 @@ if "entries" not in st.session_state:
 
 st.markdown("<h7 style='color:red;'>Note: Currently, to initiate a phone call, the recipient's number must be verified. For number verification, please contact Rishab(9643404026).</h7>", unsafe_allow_html=True)
 
+st.markdown("#### Choose Voice with Sample Preview")
+
+voice_labels = list(VOICE_OPTIONS.keys())
+selected_voice_label = st.radio("Select a Voice", voice_labels)
+
+# Save selection in session state
+selected_voice_info = VOICE_OPTIONS[selected_voice_label]
+voice_id = selected_voice_info["voice_id"]
+language = selected_voice_info["language"]
+sample_text = SAMPLE_TEXTS.get(language, SAMPLE_TEXTS["en"])
+
+with st.spinner("Generating sample..."):
+    audio_bytes = get_voice_sample(voice_id, sample_text)
+    if audio_bytes:
+        st.audio(audio_bytes, format="audio/mp3")
+    else:
+        st.warning("Unable to load sample for selected voice.")
+
+
 # Form for user input
 with st.form("user_form"):
     phone_number = st.text_input("Phone Number (with country code ex: 91XXXXXXXXXX)")
@@ -154,8 +197,6 @@ with st.form("user_form"):
     last_session_date = st.text_input("Last Session Date (e.g., '2 days ago')", value="a while ago")
     sessions_completed = st.number_input("Sessions Completed", min_value=0, step=1, value=0)
 
-    # Show all voice options regardless of language
-    selected_voice_label = st.selectbox("Agent Voice", options=list(VOICE_OPTIONS.keys()))
     selected_voice_info = VOICE_OPTIONS[selected_voice_label]
     voice_id = selected_voice_info["voice_id"]
     language = selected_voice_info["language"]
